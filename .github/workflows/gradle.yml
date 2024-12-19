@@ -1,0 +1,100 @@
+# This workflow will build a Java project with Gradle
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-gradle
+
+name: Kotlin CI with Gradle
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0.33
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: epersgeist
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+      mongodb:
+        image: mongo
+        ports:
+          - 27017:27017
+
+      neo4j:
+        image: neo4j:latest
+        env:
+          NEO4J_AUTH: neo4j/rootroot
+        ports:
+          - 7687:7687
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Extract tag name
+        run: fullTagName=${{ github.ref }} && path='refs/tags/' && a='' && tagName=${fullTagName/$path/$a} && echo $tagName && echo "##[set-output name=tagName;]$tagName"
+        id: tagName
+
+      - name: Configure environment variables
+        run: echo -e "MYSQL_USER=root\nMYSQL_PASSWORD=root\nMYSQL_DATABASE=epersgeist\nNEO_URL=bolt://localhost:7687\nNEO_USER=neo4j\nNEO_PASSWORD=rootroot" >> $GITHUB_ENV
+
+      - name: Make Gradle Wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Run tests
+        run: ./gradlew test
+
+      - name: Success notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_USERNAME: ${{ github.repository }}
+          DISCORD_AVATAR: https://www.iconsdb.com/icons/preview/green/github-9-xxl.png
+        uses: EPERS-UNQ/action-discord@master
+        with:
+          fields: '[{"name":"Proyecto",  "value":" [{{ EVENT_PAYLOAD.repository.name }}]({{ EVENT_PAYLOAD.repository.url }}) ", "inline": true}, {"name":"Tag",  "value":"[${{ steps.tagName.outputs.tagName }}](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tagName.outputs.tagName }})", "inline": true}]'
+          title: ':green_circle: Entrega exitosa'
+          color: 3258062
+          author: true
+          includeCommits: true
+
+      - name: Failure notification
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_USERNAME: ${{ github.repository }}
+          DISCORD_AVATAR: https://www.iconsdb.com/icons/preview/red/github-10-xxl.png
+        uses: EPERS-UNQ/action-discord@master
+        with:
+          fields: '[{"name":"Proyecto",  "value":" [{{ EVENT_PAYLOAD.repository.name }}]({{ EVENT_PAYLOAD.repository.url }}) ", "inline": true},{"name":"Tag",  "value":"[${{ steps.tagName.outputs.tagName }}](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tagName.outputs.tagName }})", "inline": true}]'
+          title: ':red_circle: Entrega fallida'
+          color: 9503748
+          author: true
+          includeCommits: true

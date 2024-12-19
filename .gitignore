@@ -1,0 +1,10 @@
+.classpath
+.settings
+.project
+/target
+/data/*
+.gradle/
+build/*
+.idea
+/out/*
+src/main/resources/application.properties1
